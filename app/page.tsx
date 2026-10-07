@@ -1,4 +1,4 @@
-"use client";
+
 
 import { useEffect, useRef, useState } from "react";
 
@@ -94,6 +94,9 @@ export default function Home() {
   const targetFrameRef = useRef(0);
   const currentFrameRef = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
+
+  const mobileFireStartedRef = useRef(false);
+  const mobileVideoUnlockedRef = useRef(false);
 
   const [progress, setProgress] = useState(0);
 
@@ -211,6 +214,37 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const video = menuFireRef.current;
+
+    if (!video) return;
+
+    const unlockMobileVideo = () => {
+      if (mobileVideoUnlockedRef.current) return;
+
+      mobileVideoUnlockedRef.current = true;
+      video.muted = true;
+
+      // Usa o primeiro toque real do usuário para liberar o playback.
+      // O vídeo pode ficar tocando enquanto o usuário ainda está no começo;
+      // quando a transição chegar, o scroll reinicia o vídeo do zero.
+      video.play().catch(() => {});
+    };
+
+    window.addEventListener("touchstart", unlockMobileVideo, {
+      passive: true,
+    });
+
+    window.addEventListener("pointerdown", unlockMobileVideo, {
+      passive: true,
+    });
+
+    return () => {
+      window.removeEventListener("touchstart", unlockMobileVideo);
+      window.removeEventListener("pointerdown", unlockMobileVideo);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleScroll = () => {
       const section = cinematicRef.current;
 
@@ -238,8 +272,7 @@ export default function Home() {
         fireProgress * (TOTAL_FRAMES - 1);
 
       /*
-       * Assim que chegamos no final do fogo,
-       * começamos o vídeo da chama.
+       * Transição do fogo para o menu.
        */
       const transitionProgress = range(
         value,
@@ -249,11 +282,51 @@ export default function Home() {
 
       const video = menuFireRef.current;
 
-      if (video && video.duration) {
-        /*
-         * O vídeo acompanha a transição.
-         * Isso evita aquela sensação de "outra página".
-         */
+      if (!video) return;
+
+      /*
+       * MOBILE
+       *
+       * No celular não controlamos currentTime
+       * a cada scroll, porque alguns navegadores
+       * mobile bloqueiam esse comportamento.
+       *
+       * O vídeo começa quando chegamos na transição
+       * e toca normalmente.
+       */
+      const isMobile = window.matchMedia(
+        "(max-width: 767px)"
+      ).matches;
+
+      if (isMobile) {
+        if (value < 0.58) {
+          mobileFireStartedRef.current = false;
+
+          video.pause();
+          video.currentTime = 0;
+
+          return;
+        }
+
+        if (
+          value >= 0.60 &&
+          !mobileFireStartedRef.current
+        ) {
+          mobileFireStartedRef.current = true;
+
+          video.currentTime = 0;
+          video.play().catch(() => {});
+        }
+
+        return;
+      }
+
+      /*
+       * DESKTOP
+       *
+       * Continua sincronizado com o scroll.
+       */
+      if (video.duration) {
         const maxTime = Math.max(
           video.duration - 0.05,
           0
@@ -280,31 +353,6 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => {
-    const video = menuFireRef.current;
-
-    if (!video) return;
-
-    const startVideo = () => {
-      video.currentTime = 0;
-
-      video
-        .play()
-        .catch(() => {});
-    };
-
-    video.addEventListener(
-      "loadedmetadata",
-      startVideo
-    );
-
-    return () => {
-      video.removeEventListener(
-        "loadedmetadata",
-        startVideo
-      );
-    };
-  }, []);
 
   const scrollToMenu = () => {
     const section = cinematicRef.current;
@@ -372,10 +420,6 @@ export default function Home() {
   const fireOpacity =
     transitionIn * (1 - transitionOut);
 
-  /*
-   * Faz a chama ocupar a tela
-   * antes de revelar o menu.
-   */
   const fireScale =
     1 + transitionIn * 0.08;
 
